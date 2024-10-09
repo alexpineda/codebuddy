@@ -1,20 +1,18 @@
 import sys
 import time
-import pyautogui
-import io
 import threading
 from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
-import base64
-from PIL import Image
+import select
+from utils import capture_and_save_screenshot, log_trace, clear_log, get_active_window_title
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Set default interval in seconds
-DEFAULT_CAPTURE_INTERVAL = 15
+DEFAULT_CAPTURE_INTERVAL = 10
 
 # Get capture interval from command line argument or use default
 if len(sys.argv) > 1:
@@ -34,34 +32,22 @@ else:
 client = OpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
 # Add these constants at the top of the file with other constants
-SCREENSHOT_DIR = "screenshots"
 screenshot_counter = 0
 
 TRACE_LOG_FILE = "./trace_log.txt"
 
-MAX_IMAGE_SIZE = (2000, 768)
+
+capture_paused = False
+user_input_queue = []
 
 def capture_screen():
     global screenshot_counter
     
-    # Create screenshots directory if it doesn't exist
-    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
-    
-    # Capture the screenshot
-    screenshot = pyautogui.screenshot()
-    
-    # Resize screenshot
-    resized_screenshot = resize_image(screenshot)
-
-    # Save screenshot to file
-    filename = f"{SCREENSHOT_DIR}/screenshot_{screenshot_counter:04d}.png"
-    resized_screenshot.save(filename)
+    filename, base64_image = capture_and_save_screenshot(screenshot_counter)
     screenshot_counter += 1
 
-    # Convert resized screenshot to base64
-    img_byte_array = io.BytesIO()
-    resized_screenshot.save(img_byte_array, format='PNG')
-    base64_image = base64.b64encode(img_byte_array.getvalue()).decode('utf-8')
+    # Get the active window title
+    active_window_title = get_active_window_title()
 
     # Send screenshot to GPT-4 Vision model
     try:
@@ -69,11 +55,17 @@ def capture_screen():
             model="gpt-4o-mini",
             messages=[
                 {
+                    "role": "system",
+                    "content": "The following is a screenshot of a series of screenshots.\n" +
+                    "The response will be added to an 'activity' log file, so only output relevant information.\n" +
+                    "In the application that is purposed around this, the user may ask questions about their activity log in order to aid in their productivity and act as a short term memory."
+                },
+                {
                     "role": "user",
                     "content": [
                         {
                             "type": "text",
-                            "text": "Describe what's happening in this screenshot."
+                            "text": "Describe what's happening in this screenshot. The active window is: " + active_window_title
                         },
                         {
                             "type": "image_url",
@@ -84,62 +76,87 @@ def capture_screen():
                     ]
                 }
             ],
-            max_tokens=300
+            max_tokens=500
         )
         
         vision_response = response.choices[0].message.content
-        log_trace(f"Saved screenshot: {filename}")
-        log_trace(vision_response)
-        print(f"Saved screenshot: {filename}")
-        print(f"Vision model response: {vision_response}")
+        log_trace(f"Saved screenshot: {filename}", TRACE_LOG_FILE)
+        log_trace(f"Active window: {active_window_title}", TRACE_LOG_FILE)
+        log_trace(vision_response, TRACE_LOG_FILE)
+        # print(f"Saved screenshot: {filename}")
+        # print(f"Active window: {active_window_title}")
+        # print(f"Vision model response: {vision_response}")
     except Exception as e:
-        log_trace(f"Failed to send screenshot to vision model: {e}")
+        log_trace(f"Failed to send screenshot to vision model: {e}", TRACE_LOG_FILE)
         print(f"Failed to send screenshot to vision model: {e}")
 
-def resize_image(image):
-    """Resize the image to fit within MAX_IMAGE_SIZE while maintaining aspect ratio."""
-    image.thumbnail(MAX_IMAGE_SIZE, Image.LANCZOS)
-    return image
-
-def log_trace(message):
-    timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    with open(TRACE_LOG_FILE, "a") as log_file:
-        log_file.write(f"[{timestamp}] {message}\n")
 
 def prompt_user():
-    try:
-        while True:
-            user_input = input("Enter your question about the log (or 'exit' to quit, 'reset' to clear the log): ")
-            if user_input.lower() == 'exit':
-                break
-            elif user_input.lower() == 'reset':
-                with open(TRACE_LOG_FILE, "w") as log_file:
-                    log_file.write("")
-                print("Log has been cleared.")
-            else:
-                response = client.chat.completions.create(
-                    model="gpt-4",
-                    messages=[
-                        {"role": "system", "content": "You are an assistant. Provide an appropriate response based on the given log."},
-                        {"role": "user", "content": f"The user asked: '{user_input}'. Based on the following log, provide an appropriate response:\n\n{open(TRACE_LOG_FILE, 'r').read()}"}
-                    ]
-                )
-                print(response.choices[0].message.content)
-    except KeyboardInterrupt:
-        print("\nExiting gracefully...")
+    global capture_paused
+    while True:
+        user_input = input("Enter your question (or 'exit' to quit, 'reset' to clear the log, 'continue' to resume capturing): ")
+        if user_input.lower() == 'exit':
+            print("Exiting the application...")
+            os._exit(0)  # This will forcefully terminate the entire application
+        elif user_input.lower() == 'reset':
+            clear_log(TRACE_LOG_FILE)
+            print("Log has been cleared.")
+        elif user_input.lower() == 'continue':
+            capture_paused = False
+            print("Resuming screen capture...")
+            return
+        else:
+            response = client.chat.completions.create(
+                model="gpt-4o",
+                messages=[
+                     {"role": "system", "content": "You are an assistant. Provide an appropriate response based on the given users activity log. The log was generated by capturing screenshots of the users activity and using a vision model to write the log."},
+                    {"role": "user", "content": f"The user asked: '{user_input}'. Based on the following log, provide an appropriate response:\n\n{open(TRACE_LOG_FILE, 'r').read()}"}
+                ]
+            )
+            print(response.choices[0].message.content)
+
+def capture_loop():
+    global capture_paused
+    while True:
+        if not capture_paused:
+            capture_screen()
+        time.sleep(CAPTURE_INTERVAL)
+
+def check_for_input():
+    global capture_paused, user_input_queue
+    while True:
+        rlist, _, _ = select.select([sys.stdin], [], [], 0.1)
+        if rlist:
+            user_input = sys.stdin.readline().strip()
+            if user_input.lower() == 'inquiry':
+                capture_paused = True
+                user_input_queue.append("inquiry")
 
 if __name__ == "__main__":
     print(f"Screen capture interval set to {CAPTURE_INTERVAL} seconds")
+    print("Type 'inquiry' and press Enter to pause and enter inquiry mode.")
     
+    clear_log(TRACE_LOG_FILE)
+
     # Start the capture screen function in a separate thread
-    capture_thread = threading.Thread(target=lambda: [capture_screen() or time.sleep(CAPTURE_INTERVAL) for _ in iter(int, 1)])
+    capture_thread = threading.Thread(target=capture_loop)
     capture_thread.daemon = True
     capture_thread.start()
 
+    # Start the input checking thread
+    input_thread = threading.Thread(target=check_for_input)
+    input_thread.daemon = True
+    input_thread.start()
+
     try:
-        # Run the user prompt in the main thread
-        prompt_user()
+        while True:
+            if user_input_queue:
+                action = user_input_queue.pop(0)
+                if action == "inquiry":
+                    print("\nEntering inquiry mode. Screen capture paused.")
+                    prompt_user()
+            time.sleep(0.1)
     except KeyboardInterrupt:
-        print("\nExiting gracefully...")
+        print("\nExiting...")
     finally:
-        print("Cleanup complete. Goodbye!")
+        os._exit(0)  # This ensures that the application exits even if there's an exception
