@@ -8,12 +8,13 @@ from openai import OpenAI
 from dotenv import load_dotenv
 import os
 import base64
+from PIL import Image
 
 # Load environment variables from .env file
 load_dotenv()
 
 # Set default interval in seconds
-DEFAULT_CAPTURE_INTERVAL = 5
+DEFAULT_CAPTURE_INTERVAL = 15
 
 # Get capture interval from command line argument or use default
 if len(sys.argv) > 1:
@@ -38,6 +39,8 @@ screenshot_counter = 0
 
 TRACE_LOG_FILE = "./trace_log.txt"
 
+MAX_IMAGE_SIZE = (2000, 768)
+
 def capture_screen():
     global screenshot_counter
     
@@ -47,22 +50,23 @@ def capture_screen():
     # Capture the screenshot
     screenshot = pyautogui.screenshot()
     
+    # Resize screenshot
+    resized_screenshot = resize_image(screenshot)
+
     # Save screenshot to file
     filename = f"{SCREENSHOT_DIR}/screenshot_{screenshot_counter:04d}.png"
-    screenshot.save(filename)
+    resized_screenshot.save(filename)
     screenshot_counter += 1
 
-    return
-    
-    # Convert screenshot to base64
+    # Convert resized screenshot to base64
     img_byte_array = io.BytesIO()
-    screenshot.save(img_byte_array, format='PNG')
+    resized_screenshot.save(img_byte_array, format='PNG')
     base64_image = base64.b64encode(img_byte_array.getvalue()).decode('utf-8')
 
     # Send screenshot to GPT-4 Vision model
     try:
         response = client.chat.completions.create(
-            model="gpt-4-vision-preview",
+            model="gpt-4o-mini",
             messages=[
                 {
                     "role": "user",
@@ -91,6 +95,11 @@ def capture_screen():
     except Exception as e:
         log_trace(f"Failed to send screenshot to vision model: {e}")
         print(f"Failed to send screenshot to vision model: {e}")
+
+def resize_image(image):
+    """Resize the image to fit within MAX_IMAGE_SIZE while maintaining aspect ratio."""
+    image.thumbnail(MAX_IMAGE_SIZE, Image.LANCZOS)
+    return image
 
 def log_trace(message):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
