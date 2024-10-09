@@ -1,0 +1,4 @@
+pyautogui
+pillow==9.5.0
+openai
+python-dotenv
