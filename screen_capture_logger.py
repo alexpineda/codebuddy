@@ -1,7 +1,6 @@
 import sys
 import time
 import threading
-from datetime import datetime
 from openai import OpenAI
 from dotenv import load_dotenv
 import os
@@ -88,18 +87,18 @@ def prompt_user():
     global capture_paused
     while True:
         user_input = input("Enter your question (or 'exit' to quit, 'reset' to clear the log, 'continue' to resume capturing): ")
-        if user_input.lower() == 'exit':
-            print("Exiting the application...")
-            os._exit(0)  # This will forcefully terminate the entire application
-        elif user_input.lower() == 'reset':
+        if user_input.lower() == 'reset':
             clear_log(TRACE_LOG_FILE)
             print("Log has been cleared.")
         elif user_input.lower() == 'continue':
             capture_paused = False
             print("Resuming screen capture...")
             return
-        # make sure user_input is not empty
+        elif user_input.lower() == 'exit':
+            print("Exiting...")
+            os._exit(0)
         elif user_input:
+            print("Asking codebuddy: " + user_input, end='', flush=True)
             # Log the user's inquiry
             log_trace(f"USER INQUIRY: {user_input}", TRACE_LOG_FILE)
             
@@ -116,6 +115,10 @@ def prompt_user():
             log_trace(f"ASSISTANT RESPONSE: {assistant_response}", TRACE_LOG_FILE)
             
             print(assistant_response)
+
+            print("Enter another question or type 'continue' to resume capturing.")
+        else:
+            print("Please enter a valid input.")
 
 def capture_loop():
     global capture_paused
@@ -135,6 +138,7 @@ def check_for_input():
                 user_input_queue.append("inquiry")
 
 if __name__ == "__main__":
+    print("Hi this is codebuddy! I'll record your screen periodically and you can ask questions as you work away!")
     print(f"Screen capture interval set to {CAPTURE_INTERVAL} seconds")
     print("Press Enter at any time to pause and enter inquiry mode.")
     
