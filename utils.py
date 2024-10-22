@@ -63,10 +63,14 @@ def get_active_window_title():
             end tell
             '''
             result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=True)
-            app_name, window_title = result.stdout.strip().split(", ")
+            output = result.stdout.strip().split(", ", 1)
+            app_name = output[0]
+            window_title = output[1] if len(output) > 1 else ""
             return f"{app_name}: {window_title}" if window_title else app_name
         except subprocess.CalledProcessError:
             return "Unknown"
+        except Exception as e:
+            return f"Error: {str(e)}"
 
     elif system == "Windows":
         try:
