@@ -2,3 +2,4 @@ pyautogui
 pillow==9.5.0
 openai
 python-dotenv
+gitpython>=3.1.40

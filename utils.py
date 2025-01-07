@@ -10,9 +10,9 @@ import subprocess
 SCREENSHOT_DIR = "screenshots"
 MAX_IMAGE_SIZE = (2000, 768)
 
-def capture_and_save_screenshot(screenshot_counter):
+def capture_and_save_screenshot(screenshot_counter, screenshots_dir="screenshots"):
     # Create screenshots directory if it doesn't exist
-    os.makedirs(SCREENSHOT_DIR, exist_ok=True)
+    os.makedirs(screenshots_dir, exist_ok=True)
     
     # Capture the screenshot
     screenshot = pyautogui.screenshot()
@@ -21,7 +21,7 @@ def capture_and_save_screenshot(screenshot_counter):
     resized_screenshot = resize_image(screenshot)
 
     # Save screenshot to file
-    filename = f"{SCREENSHOT_DIR}/screenshot_{screenshot_counter:04d}.png"
+    filename = os.path.join(screenshots_dir, f"screenshot_{screenshot_counter:04d}.png")
     resized_screenshot.save(filename)
 
     # Convert resized screenshot to base64
@@ -40,10 +40,6 @@ def log_trace(message, log_file_path):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     with open(log_file_path, "a") as log_file:
         log_file.write(f"[{timestamp}] {message}\n")
-
-def clear_log(log_file_path):
-    with open(log_file_path, "w") as log_file:
-        log_file.write("")
 
 def get_active_window_title():
     system = platform.system()
@@ -84,3 +80,43 @@ def get_active_window_title():
 
     else:
         return f"Unsupported OS: {system}"
+
+def get_active_window_id():
+    """Get a unique identifier for the active window."""
+    return get_active_window_title()
+    system = platform.system()
+
+    if system == "Darwin":  # macOS
+        try:
+            script = '''
+            tell application "System Events"
+                set frontApp to first application process whose frontmost is true
+                set appName to name of frontApp
+                set windowId to ""
+                tell frontApp
+                    if (count of windows) > 0 then
+                        set windowId to id of window 1
+                    end if
+                end tell
+                return {appName & ":" & windowId}
+            end tell
+            '''
+            result = subprocess.run(["osascript", "-e", script], capture_output=True, text=True, check=True)
+            return result.stdout.strip()
+        except subprocess.CalledProcessError:
+            return "unknown:0"
+        except Exception as e:
+            return f"error:{str(e)}"
+
+    elif system == "Windows":
+        try:
+            import win32gui
+            hwnd = win32gui.GetForegroundWindow()
+            return f"{win32gui.GetWindowText(hwnd)}:{hwnd}"
+        except ImportError:
+            return "win32gui_not_installed:0"
+        except Exception as e:
+            return f"error:{str(e)}"
+
+    else:
+        return f"unsupported_os_{system}:0"
