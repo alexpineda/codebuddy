@@ -53,8 +53,9 @@ def prompt_user():
             user_input = console.input("\n[bold green]Enter your question[/] ([dim]'exit' to quit, 'reset' to clear, 'continue' to resume[/]): ")
             
             if not user_input:
-                console.print("[yellow]Please enter a valid input.[/]")
-                continue
+                capture_handler.resume()
+                console.print("[green]✓[/] Resuming screen capture...")
+                return
                 
             if user_input.lower() == 'reset':
                 session = session_manager.create_new_session()
@@ -67,6 +68,8 @@ def prompt_user():
                 
                 os.system('cls' if os.name == 'nt' else 'clear')
                 console.print(f"[green]✓[/] Log cleared and new session created {session['session_id']}")
+                capture_handler.resume()
+                console.print("[green]✓[/] Resuming screen capture...")
                 return
             elif user_input.lower() == 'continue':
                 capture_handler.resume()
@@ -131,7 +134,7 @@ Screen capture is automatically paused when you return to this window.
     input_thread.start()
 
     # After session initialization
-    context_handler = session['context_handler']
+    # context_handler = session['context_handler']
 
     try:
         while True:

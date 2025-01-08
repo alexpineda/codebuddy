@@ -1,0 +1,8 @@
+venv/
+screenshots/
+trace_log.txt
+.env
+.DS_Store
+
+__pycache__/
+sessions/*

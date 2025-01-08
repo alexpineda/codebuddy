@@ -1,6 +1,6 @@
 import os
 from datetime import datetime
-from context import ContextHandler
+# from context import ContextHandler
 
 class SessionManager:
     def __init__(self):
@@ -28,20 +28,20 @@ class SessionManager:
         self.trace_log_file = trace_log_file
         
         # Add after creating session directory
-        context_handler = ContextHandler(session_dir)
+        # context_handler = ContextHandler(session_dir)
         
         # Automatically detect and add git context if available
-        context_handler.add_git_context()
+        # context_handler.add_git_context()
         
         # Add the session directory to context
-        context_handler.add_directory(session_dir)
+        # context_handler.add_directory(session_dir)
         
         session_data = {
             'session_id': session_id,
             'session_dir': session_dir,
             'trace_log_file': trace_log_file,
             'screenshots_dir': screenshots_dir,
-            'context_handler': context_handler  # Add context handler to session data
+            # 'context_handler': context_handler  # Add context handler to session data
         }
         
         return session_data 
