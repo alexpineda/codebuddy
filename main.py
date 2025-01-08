@@ -39,7 +39,7 @@ TRACE_LOG_FILE = session['trace_log_file']
 SCREENSHOTS_DIR = session['screenshots_dir']
 
 user_input_queue = []
-prompt_handler = PromptHandler(TRACE_LOG_FILE)
+prompt_handler = PromptHandler(TRACE_LOG_FILE, CAPTURE_INTERVAL)
 capture_handler = CaptureHandler(prompt_handler, CAPTURE_INTERVAL, screenshots_dir=SCREENSHOTS_DIR)
 
 # Add near the top with other global variables
