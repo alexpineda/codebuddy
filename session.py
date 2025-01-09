@@ -1,22 +1,28 @@
 import os
 from datetime import datetime
 import logging
+
+from capture import SessionCaptures
+from prompting import SessionPrompts
 # from context import ContextHandler
 
 # Configure logging
 logging.basicConfig(
-    level=logging.INFO,
+    level=logging.INFO if os.getenv('DEBUG', '').upper() == 'TRUE' else logging.ERROR,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 
 class SessionManager:
-    def __init__(self):
-        self.sessions_dir = "sessions"
+    def __init__(self, config):
+        self.config = config
+        self.sessions_dir = config.get("session_dir", "sessions")
+
         self.current_session = None
-        self.screenshots_dir = None
-        self.trace_log_file = None
         self.logger = logging.getLogger('SessionManager')
-        
+
+        self.prompts = None 
+        self.captures = None
+
         # Create sessions directory if it doesn't exist
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.logger.info(f"Initialized SessionManager with sessions directory: {self.sessions_dir}")
@@ -40,14 +46,20 @@ class SessionManager:
             session_data = {
                 'session_id': most_recent,
                 'session_dir': os.path.join(self.sessions_dir, most_recent),
-                'trace_log_file': os.path.join(self.sessions_dir, most_recent, "trace_log.txt"),
+                'session_log_filepath': os.path.join(self.sessions_dir, most_recent, "trace_log.txt"),
                 'screenshots_dir': os.path.join(self.sessions_dir, most_recent, "screenshots")
             }
             
             # Verify the trace log file exists
-            if not os.path.exists(session_data['trace_log_file']):
-                self.logger.warning(f"Trace log file not found in recent session: {session_data['trace_log_file']}")
-            
+            if not os.path.exists(session_data['session_log_filepath']):
+                self.logger.warning(f"Trace log file not found in recent session: {session_data['session_log_filepath']}")
+                raise Exception(f"Trace log file not found in recent session: {session_data['session_log_filepath']}")
+
+            # Verify contents of trace log file are not empty
+            if os.path.getsize(session_data['session_log_filepath']) == 0:
+                self.logger.warning(f"Trace log file is empty: {session_data['session_log_filepath']}")
+                raise Exception(f"Trace log file is empty: {session_data['session_log_filepath']}")
+
             return session_data
         except Exception as e:
             self.logger.error(f"Error getting most recent session: {str(e)}", exc_info=True)
@@ -59,38 +71,40 @@ class SessionManager:
             session_id = datetime.now().strftime("%Y%m%d_%H%M%S")
             session_dir = os.path.join(self.sessions_dir, session_id)
             screenshots_dir = os.path.join(session_dir, "screenshots")
-            trace_log_file = os.path.join(session_dir, "trace_log.txt")
+            session_log_filepath = os.path.join(session_dir, "trace_log.txt")
             
-            self.logger.info(f"Creating new session with ID: {session_id}")
+            self.logger.debug(f"Creating new session with ID: {session_id}")
             
             # Create necessary directories
             os.makedirs(session_dir, exist_ok=True)
             os.makedirs(screenshots_dir, exist_ok=True)
-            self.logger.info(f"Created session directories: {session_dir}")
+            # Create trace log file
+            with open(session_log_filepath, 'w') as log_file:
+                log_file.write("")
+            self.logger.debug(f"Created session directories: {session_dir}")
             
             # If continuing from previous session, copy the trace log
             if continue_from:
-                self.logger.info(f"Attempting to continue from previous session: {continue_from['session_id']}")
-                if os.path.exists(continue_from['trace_log_file']):
+                self.logger.debug(f"Attempting to continue from previous session: {continue_from['session_id']}")
+                if os.path.exists(continue_from['session_log_filepath']):
                     import shutil
-                    shutil.copy2(continue_from['trace_log_file'], trace_log_file)
-                    self.logger.info(f"Copied trace log from previous session: {continue_from['trace_log_file']} -> {trace_log_file}")
+                    shutil.copy2(continue_from['session_log_filepath'], session_log_filepath)
+                    self.logger.debug(f"Copied trace log from previous session: {continue_from['session_log_filepath']} -> {session_log_filepath}")
                 else:
-                    self.logger.warning(f"Previous session trace log not found: {continue_from['trace_log_file']}")
+                    self.logger.warning(f"Previous session trace log not found: {continue_from['session_log_filepath']}")
             
-            self.current_session = session_id
-            self.screenshots_dir = screenshots_dir
-            self.trace_log_file = trace_log_file
-            
-            session_data = {
+            self.current_session = {
                 'session_id': session_id,
                 'session_dir': session_dir,
-                'trace_log_file': trace_log_file,
+                'session_log_filepath': session_log_filepath,
                 'screenshots_dir': screenshots_dir,
             }
+
+            self.prompts = SessionPrompts(self)
+            self.captures = SessionCaptures(self)
+            self.captures.start()
             
-            self.logger.info(f"Successfully created new session: {session_id}")
-            return session_data
+            self.logger.debug(f"Successfully created new session: {session_id}")
             
         except Exception as e:
             self.logger.error(f"Error creating new session: {str(e)}", exc_info=True)

@@ -1,0 +1,15 @@
+{
+    "screen_vision_model": "gpt-4o-mini",
+    "qa_model": "gpt-4o-mini",
+    "privacy_vision_model": "phi-4",
+
+    "capture_interval": 5,
+    "session_dir": "sessions",
+
+    "custom_models": [
+        {
+            "model": "phi-4",
+            "base_url": "http://127.0.0.1:1234/"
+        }
+    ]
+}

@@ -1,23 +1,12 @@
-# AI-Powered Screen Activity Logger
+# Screen Activity Logger & AI Assistant
 
-This program is an AI-powered screen activity logger that captures screenshots at regular intervals, analyzes them using OpenAI's GPT-4 Vision model, and logs the descriptions. It also allows users to ask questions about their activity log, providing a unique way to track and understand your computer usage.
+This program is an AI-powered screen activity logger that captures screenshots at regular intervals, analyzes them using OpenAI/Claude/Your Model, and logs the descriptions. It also allows users to ask questions about their activity log, providing a unique way to track and understand your computer usage.
 
 ## Features
 
-- Automatic screenshot capture at customizable intervals
-- AI-powered analysis of screenshots using GPT-4 Vision
-- Activity logging with timestamps
-- Interactive inquiry mode to ask questions about your activity
-- Option to clear the log and reset
-
-## Requirements
-
-- Python 3.7+
-- OpenAI API key
-- Required Python packages (install via `pip install -r requirements.txt`):
-  - openai
-  - python-dotenv
-  - Pillow
+- Automatic screenshot capture at customizable intervals, interpreted by vision model of your choice.
+- Q&A mode to ask questions about your activity.
+- Privacy model support (via LM Studio or Ollama) to gatekeep what gets sent to stronger models, or use all local models.
 
 ## Setup
 
@@ -27,14 +16,14 @@ This program is an AI-powered screen activity logger that captures screenshots a
    ```
    OPENAI_API_KEY=your_api_key_here
    ```
+4. Use `config.json` to configure your models and other settings.
 
 ## Usage
 
 1. Run the program:
    ```
-   python screen_capture_logger.py [interval]
+   python main.py 
    ```
-   Where `[interval]` is an optional argument to set the capture interval in seconds (default is 15 seconds).
 
 2. The program will start capturing screenshots and logging activity.
 
@@ -43,7 +32,7 @@ This program is an AI-powered screen activity logger that captures screenshots a
 4. In inquiry mode, you can:
    - Ask questions about your activity
    - Type 'exit' to quit the program
-   - Type 'reset' to clear the log
+   - Type 'reset' to start a new session
    - Type 'continue' to resume screen capturing
 
 ## Note
