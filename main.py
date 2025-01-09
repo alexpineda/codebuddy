@@ -43,7 +43,7 @@ Screen capture is automatically paused when you return to this window.
     if previous_session:
         previous_session_log = open(previous_session['session_log_filepath'], 'r').read()
         previous_session_description = app.app_prompts.prompt(f"In as few words as possible, describe the previous productivity session. Speak to the user as if you were a human assistant. Log: {previous_session_log}")
-        console.print(f"[bold blue]Previously on CodeBuddy:[/] {previous_session_description}")
+        console.print(f"[bold blue]📰 Previously on CodeBuddy:[/] {previous_session_description}")
         continue_previous = console.input("\n[blue]Would you like to continue from previous session? (y/N): ").lower().strip()
     else:
         continue_previous = 'n'

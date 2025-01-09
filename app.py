@@ -6,7 +6,6 @@ import json
 from rich.console import Console
 from rich.panel import Panel
 from rich.text import Text
-from rich import print as rprint
 from prompting import AppPrompts
 from session import SessionManager
 from threading import Event
@@ -89,7 +88,7 @@ class App:
                     console.print("[green]✓[/] Resuming screen capture...")
                     return
                 elif user_input.lower() == 'exit':
-                    console.print("[red]Exiting...[/]")
+                    console.print("[red]Exiting. Remember to stay hydrated! 💧[/]")
                     os._exit(0)
                 else:
                     with console.status("[bold green]Thinking...[/]", spinner="dots"):

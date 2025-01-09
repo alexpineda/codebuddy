@@ -1,5 +1,5 @@
 pyautogui
 pillow==9.5.0
-openai
+requests>=2.31.0
 python-dotenv
 gitpython>=3.1.40

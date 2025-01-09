@@ -1,6 +1,6 @@
 import datetime
-from openai import OpenAI
 import os
+import requests
 from utils import append_log
 from tools.suggested_context_finder import SuggestedContextFinder
 
@@ -25,10 +25,30 @@ built_in_models = [
 
 class Client:
     def __init__(self, model_config):
-        api_key = model_config.get("key_name") and os.getenv(model_config["key_name"])
-        base_url = model_config.get("base_url")
-        self.client = OpenAI(api_key=api_key, base_url=base_url)
+        self.api_key = model_config.get("key_name") and os.getenv(model_config["key_name"])
+        self.base_url = model_config.get("base_url", "http://localhost:8000/")
         self.model = model_config["model"]
+
+    def create_chat_completion(self, messages, max_tokens=None):
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        
+        payload = {
+            "model": self.model,
+            "messages": messages
+        }
+        if max_tokens:
+            payload["max_tokens"] = max_tokens
+
+        response = requests.post(
+            f"{self.base_url}chat/completions",
+            headers=headers,
+            json=payload,
+            timeout=60  # Add timeout to handle slow local models
+        )
+        response.raise_for_status()
+        return response.json()
 
 
 class AppPrompts:
@@ -41,12 +61,13 @@ class AppPrompts:
     def prompt(self, prompt_text):
         print("DEBUG:")
         print(f"Model: {self.client.model}")
-        print(f"API Key (first 8 chars): {self.client.client.api_key[:8]}...")
-        print(f"Base URL: {self.client.client.base_url}")
-        response = self.client.client.chat.completions.create(
-            model=self.client.model, messages=[{"role": "user", "content": prompt_text}]
+        print(f"API Key (first 8 chars): {self.client.api_key[:8]}...")
+        print(f"Base URL: {self.client.base_url}")
+        
+        response = self.client.create_chat_completion(
+            messages=[{"role": "user", "content": prompt_text}]
         )
-        return response.choices[0].message.content
+        return response["choices"][0]["message"]["content"]
 
 
 class SessionPrompts:
@@ -74,15 +95,14 @@ class SessionPrompts:
         return self.session.current_session["session_log_filepath"]
 
     def prompt(self, prompt_text):
-        response = self.qa.client.chat.completions.create(
-            model=self.qa.model, messages=[{"role": "user", "content": prompt_text}]
+        response = self.qa.create_chat_completion(
+            messages=[{"role": "user", "content": prompt_text}]
         )
-        return response.choices[0].message.content
+        return response["choices"][0]["message"]["content"]
 
     def process_screenshot(self, base64_image, filename, active_window_title):
         try:
-            response = self.vision.client.chat.completions.create(
-                model=self.vision.model,
+            response = self.vision.create_chat_completion(
                 messages=[
                     {
                         "role": "system",
@@ -115,7 +135,7 @@ class SessionPrompts:
                 max_tokens=2000,
             )
 
-            vision_response = response.choices[0].message.content
+            vision_response = response["choices"][0]["message"]["content"]
             append_log(f"Active window: {active_window_title}", self.session_log_filepath)
             append_log(vision_response, self.session_log_filepath)
             return True
@@ -141,8 +161,7 @@ class SessionPrompts:
             with open(self.session_log_filepath, "r") as f:
                 log_content = f.read()
 
-            response = self.qa.client.chat.completions.create(
-                model=self.qa.model,
+            response = self.qa.create_chat_completion(
                 messages=[
                     {
                         "role": "system",
@@ -163,7 +182,7 @@ class SessionPrompts:
                     {"role": "user", "content": user_input},
                 ],
             )
-            assistant_response = response.choices[0].message.content
+            assistant_response = response["choices"][0]["message"]["content"]
 
             append_log(f"USER INQUIRY: {user_input}", self.session_log_filepath)
             append_log(
