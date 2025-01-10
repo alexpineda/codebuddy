@@ -4,87 +4,158 @@ import requests
 from utils import append_log
 from tools.suggested_context_finder import SuggestedContextFinder
 
-built_in_models = [
+built_in_providers = [
     {
-        "key_name": "OPENAI_API_KEY",
-        "model": "gpt-4o-mini",
-        "base_url": "https://api.openai.com/v1/",
+        "provider": "openai",
+        "api_key_name": "OPENAI_API_KEY",
+        "base_url": "https://api.openai.com/",
+        "chat_completions_url": "v1/chat/completions",
+        "auth_header_name": "Authorization",
+        "max_output_tokens": 16_384,
+        "system": "message_role",
+        "models": ["gpt-4o-mini", "gpt-4o"],
+        "response_mapping": {
+            "content": "choices.0.message.content",
+            "model": "model",
+            "usage": "usage"
+        }
     },
     {
-        "key_name": "OPENAI_API_KEY",
-        "model": "gpt-4o",
-        "base_url": "https://api.openai.com/v1/",
-    },
-    {
-        "key_name": "ANTHROPIC_API_KEY",
-        "model": "claude-3-5-sonnet-20241022",
-        "base_url": "https://api.anthropic.com/v1/",
-    },
+        "provider": "anthropic",
+        "api_key_name": "ANTHROPIC_API_KEY",
+        "base_url": "https://api.anthropic.com/",
+        "chat_completions_url": "v1/messages",
+        "extra_headers": {
+            "anthropic-version": "2023-06-01"
+        },
+        "auth_header_name": "x-api-key",
+        "max_output_tokens": 8192,
+        "models": ["claude-3-5-sonnet-20241022"],
+        "system": "top_level_field",
+        "response_mapping": {
+            "content": "content.0.text",
+            "model": "model",
+            "usage": "usage"
+        }
+    }
 ]
 
 
 class Client:
-    def __init__(self, model_config):
-        self.api_key = model_config.get("key_name") and os.getenv(model_config["key_name"])
-        self.base_url = model_config.get("base_url", "http://localhost:8000/")
+    def __init__(self, model_config, providers=built_in_providers):
+        self.provider = next(p for p in providers if model_config["model"] in p["models"])
+        self.api_key = self.provider.get("api_key_name") and os.getenv(self.provider["api_key_name"])
+        self.base_url = self.provider.get("base_url", "http://localhost:8000/")
         self.model = model_config["model"]
+        self.chat_completions_url = self.provider.get("chat_completions_url", "chat/completions")
+        self.extra_headers = self.provider.get("extra_headers", {})
 
-    def create_chat_completion(self, messages, max_tokens=None):
-        headers = {"Content-Type": "application/json"}
+    def _get_nested_value(self, obj, path):
+        """Get a value from a nested dictionary using a dot-separated path"""
+        for key in path.split('.'):
+            try:
+                if key.isdigit():
+                    obj = obj[int(key)]
+                else:
+                    obj = obj[key]
+            except (KeyError, IndexError, TypeError):
+                return None
+        return obj
+
+    def create_chat_completion(self, messages, system_message=None, max_tokens=None):
+        headers = {
+            "Content-Type": "application/json",
+            **self.extra_headers  # Merge provider-specific extra headers
+        }
         if self.api_key:
-            headers["Authorization"] = f"Bearer {self.api_key}"
+            auth_value = f"Bearer {self.api_key}" if self.provider.get("auth_header_name") == "Authorization" else self.api_key
+            headers[self.provider.get("auth_header_name", "Authorization")] = auth_value
         
         payload = {
             "model": self.model,
-            "messages": messages
+            "messages": messages,
+            "max_tokens": max_tokens if max_tokens else self.provider.get("max_output_tokens", 8192)
         }
-        if max_tokens:
-            payload["max_tokens"] = max_tokens
+
+        if system_message:
+            if self.provider.get("system") == "message_role":
+                payload["messages"] = [{"role": "system", "content": system_message}] + payload["messages"]
+            elif self.provider.get("system") == "top_level_field":
+                payload["system"] = system_message
 
         response = requests.post(
-            f"{self.base_url}chat/completions",
+            f"{self.base_url}{self.chat_completions_url}",
             headers=headers,
             json=payload,
             timeout=60  # Add timeout to handle slow local models
         )
         response.raise_for_status()
-        return response.json()
+        raw_response = response.json()
+        
+        # Map the response according to provider's response mapping
+        mapping = self.provider.get("response_mapping", {})
+        mapped_response = {
+            key: self._get_nested_value(raw_response, path)
+            for key, path in mapping.items()
+        }
+        return mapped_response
 
 
 class AppPrompts:
     def __init__(self, config):
-        custom_models = config["custom_models"] or []
-        self.models = built_in_models + custom_models
+        custom_providers = config.get("custom_providers", [])
+        self.providers = built_in_providers + custom_providers
+        
+        # Flatten models for backward compatibility
+        self.models = []
+        for provider in self.providers:
+            for model in provider["models"]:
+                self.models.append({"model": model})
+        
         client_config = next(m for m in self.models if m["model"] == config["qa_model"])
-        self.client = Client(client_config)
+        self.client = Client(client_config, providers=self.providers)
 
     def prompt(self, prompt_text):
-        print("DEBUG:")
-        print(f"Model: {self.client.model}")
-        print(f"API Key (first 8 chars): {self.client.api_key[:8]}...")
-        print(f"Base URL: {self.client.base_url}")
-        
         response = self.client.create_chat_completion(
             messages=[{"role": "user", "content": prompt_text}]
         )
-        return response["choices"][0]["message"]["content"]
+        return response["content"]
 
+class CustomInstructions:
+    def __init__(self, config):
+        self.vision = self.load_instructions("instructions_vision.txt")
+        self.qa = self.load_instructions("instructions_qa.txt")
+        self.privacy = self.load_instructions("instructions_privacy.txt")
+    
+    def load_instructions(self, filepath):
+        with open(filepath, 'r') as file:
+            return file.read()
 
 class SessionPrompts:
     def __init__(self, session):
         self.session = session
         config = session.config
-        custom_models = config["custom_models"] or []
-        self.models = built_in_models + custom_models
+
+        self.providers = built_in_providers + config.get("custom_providers", [])
+        self.custom_instructions = CustomInstructions(config)
+
+        # Flatten models for backward compatibility
+        self.models = []
+        for provider in self.providers:
+            for model in provider["models"]:
+                self.models.append({"model": model})
 
         self.vision = Client(
-            next(m for m in self.models if m["model"] == config["screen_vision_model"])
+            next(m for m in self.models if m["model"] == config["screen_vision_model"]),
+            providers=self.providers
         )
         self.qa = Client(
-            next(m for m in self.models if m["model"] == config["qa_model"])
+            next(m for m in self.models if m["model"] == config["qa_model"]),
+            providers=self.providers
         )
         self.privacy_vision = Client(
-            next(m for m in self.models if m["model"] == config["privacy_vision_model"])
+            next(m for m in self.models if m["model"] == config["privacy_vision_model"]),
+            providers=self.providers
         )
 
         self.context_finder = SuggestedContextFinder()
@@ -98,24 +169,14 @@ class SessionPrompts:
         response = self.qa.create_chat_completion(
             messages=[{"role": "user", "content": prompt_text}]
         )
-        return response["choices"][0]["message"]["content"]
+        return response["content"]
 
     def process_screenshot(self, base64_image, filename, active_window_title):
         try:
+            system_message = self.custom_instructions.vision.replace("{capture_interval}", str(self.interval))
             response = self.vision.create_chat_completion(
+                system_message=system_message,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": """
-                        You are a screenshot analysis assistant.
-                        You are part of an application that is purposed around aiding the user in their productivity and act as a short term memory.
-                        The following is a screenshot of a series of screenshots of the user's screen taken in {self.interval} second intervals.
-                        A screenshot will not be taken if the user is on the same screen they started this application on (command line console).
-                        The response will be added cumulatively to an 'activity' log file where another assistant will read the log and respond to the user about their activity.
-                        Feel free to use the context of the previous screenshots to help you describe the current screenshot.
-                        Use any special encoding or formatting to aid in the process of describing the screenshot, including compression of repetitive text or repeating screenshots.
-                        """,
-                    },
                     {
                         "role": "user",
                         "content": [
@@ -135,9 +196,9 @@ class SessionPrompts:
                 max_tokens=2000,
             )
 
-            vision_response = response["choices"][0]["message"]["content"]
-            append_log(f"Active window: {active_window_title}", self.session_log_filepath)
-            append_log(vision_response, self.session_log_filepath)
+            vision_response = response["content"]
+            self.session.write_to_log(f"Active window: {active_window_title}")
+            self.session.write_to_log(vision_response)
             return True
         except Exception as e:
             print(f"Failed to send screenshot to vision model: {e}")
@@ -161,20 +222,10 @@ class SessionPrompts:
             with open(self.session_log_filepath, "r") as f:
                 log_content = f.read()
 
+            system_message = self.custom_instructions.qa.replace("{capture_interval}", str(self.interval))
             response = self.qa.create_chat_completion(
+                system_message=system_message,
                 messages=[
-                    {
-                        "role": "system",
-                        "content": """
-                     You are an assistant that is purposed around aiding the user in their productivity and act as a short term memory.
-                     Provide an appropriate response based on the given users activity log.
-                     The activity log is generated by capturing screenshots of the users activity and using a vision model to write the log. 
-                     The log may also contain previous responses from the user and you, assistant.
-                     Screenshots are taken in {self.interval} second intervals, unless the user is on the same screen they started this application on (command line console).
-                     Be positive. The user is working on something important. The user is trying to get things done and needs help.
-                     Talk like a really smart engineer, quirky, super sharp, no bullshit, full of insights, helpful, to the point. We are pumped to be working togethor, can get annoyed with each other sometimes, and want to be efficient and make great products.
-                     """,
-                    },
                     {
                         "role": "assistant",
                         "content": f"Latest activity log: {log_content}. How can I help you?",
@@ -182,12 +233,10 @@ class SessionPrompts:
                     {"role": "user", "content": user_input},
                 ],
             )
-            assistant_response = response["choices"][0]["message"]["content"]
+            assistant_response = response["content"]
 
-            append_log(f"USER INQUIRY: {user_input}", self.session_log_filepath)
-            append_log(
-                f"ASSISTANT RESPONSE: {assistant_response}", self.session_log_filepath
-            )
+            self.session.write_to_log(f"USER INQUIRY: {user_input}")
+            self.session.write_to_log(f"ASSISTANT RESPONSE: {assistant_response}")
 
             return assistant_response
         except Exception as e:

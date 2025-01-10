@@ -27,6 +27,11 @@ class SessionManager:
         os.makedirs(self.sessions_dir, exist_ok=True)
         self.logger.info(f"Initialized SessionManager with sessions directory: {self.sessions_dir}")
     
+    def write_to_log(self, message):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        with open(self.current_session['session_log_filepath'], 'a') as log_file:
+            log_file.write(f"[{timestamp}] {message}\n")
+
     def get_most_recent_session(self):
         """Get the most recent session directory"""
         try:

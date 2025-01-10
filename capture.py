@@ -1,8 +1,15 @@
+import os
 import threading
 import time
+
+from dotenv import load_dotenv
 from utils import capture_and_save_screenshot, get_active_window_title, get_active_window_id
 from rich.console import Console
 
+load_dotenv()
+is_debug = os.getenv("DEBUG") == "TRUE"
+print(f"is_debug: {is_debug}")
+print(f"DEBUG: {os.getenv('DEBUG')}")
 class SessionCaptures:
     def __init__(self, session):
         self.session = session
@@ -27,7 +34,7 @@ class SessionCaptures:
 
     def capture_screen(self):
         # Skip capture if we're in the starting window
-        if get_active_window_id() == self.starting_window_id:
+        if not is_debug and get_active_window_id() == self.starting_window_id:
             self.console.print("[yellow]Skipping capture[/], still in starting window")
             return
 

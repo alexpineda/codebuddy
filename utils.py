@@ -38,8 +38,6 @@ def resize_image(image):
 
 def append_log(message, log_file_path):
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    # Create parent directory if it doesn't exist
-    os.makedirs(os.path.dirname(log_file_path), exist_ok=True)
     with open(log_file_path, "a") as log_file:
         log_file.write(f"[{timestamp}] {message}\n")
 
